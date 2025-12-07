@@ -31,7 +31,6 @@ class BallSimulation:
         self.drop_timer = 0.0
         
     def initialize(self):
-        """Initialize GPU arrays and simulation."""
         import torch
         
         self.gpu_arrays, self.counters = gpu_setup.setup_torch_arrays(self.particle_count, torch)
@@ -39,7 +38,6 @@ class BallSimulation:
         self.metrics_sampler.start()
     
     def run(self, duration=None, show_visualization=True):
-        """Run the simulation."""
         import torch
         import pygame
         
@@ -55,28 +53,23 @@ class BallSimulation:
             while self.running:
                 frame_start = time.time()
                 
-                # Handle events
                 events = pygame.event.get()
                 event_handler.handle_events(viz, events)
                 
-                # Check for quit
                 for event in events:
                     if event.type == pygame.QUIT:
                         self.running = False
                 
-                # Check duration
                 elapsed = time.time() - start_time
                 if duration and elapsed >= duration:
                     self.running = False
                     break
                 
-                # Update physics parameters from UI
                 slider_values = viz.get_slider_values()
                 self.gravity_strength = slider_values['gravity']
                 self.small_ball_speed = slider_values['small_ball_speed']
                 self.initial_balls = int(slider_values['initial_balls'])
                 
-                # Get max_balls_cap from text box
                 try:
                     max_cap_text = viz.get_max_balls_cap()
                     self.max_balls_cap = int(max_cap_text) if max_cap_text.isdigit() else 100000
@@ -85,12 +78,10 @@ class BallSimulation:
                 
                 self.split_enabled = viz.get_split_enabled()
                 
-                # Process spawn requests
                 spawn_requests = viz.get_spawn_requests()
                 for sim_x, sim_y, count in spawn_requests:
                     self.spawn_big_balls(sim_x, sim_y, count)
                 
-                # Run physics
                 params = {
                     'gravity_strength': self.gravity_strength,
                     'small_ball_speed': self.small_ball_speed,
@@ -106,7 +97,6 @@ class BallSimulation:
                     self.gpu_arrays, params, torch
                 )
                 
-                # Update counters
                 self.counters['active_count'] = result['active_count']
                 self.counters['small_ball_count'] = result['small_ball_count']
                 self.drop_timer = result['drop_timer']
@@ -115,11 +105,9 @@ class BallSimulation:
                 torch.cuda.synchronize()
                 self.iterations += 1
                 
-                # Get particle data for rendering
                 positions, masses, colors, glows = self.get_particle_sample(max_samples=2000)
                 
                 if positions is not None:
-                    # Calculate FPS
                     frame_time = time.time() - frame_start
                     frame_times.append(frame_time)
                     if len(frame_times) > max_frame_history:
@@ -127,13 +115,10 @@ class BallSimulation:
                     avg_frame_time = sum(frame_times) / len(frame_times)
                     render_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
                     
-                    # Get GPU utilization
                     gpu_util = self.metrics_sampler.get_current_util()
                     
-                    # Get influence boundaries for big balls
                     influence_boundaries = self.get_influence_boundaries(self.gravity_strength)
                     
-                    # Render
                     viz.render_frame(
                         positions=positions,
                         masses=masses,
@@ -193,7 +178,6 @@ class BallSimulation:
         print(f"\n\nCompleted: {self.iterations:,} iterations in {elapsed:.1f}s ({self.iterations/elapsed:.1f} it/s)")
     
     def spawn_big_balls(self, x, y, count=1):
-        """Spawn big balls at specified position."""
         self.counters['active_count'] = particle_utils.spawn_big_balls(
             self.gpu_arrays,
             'torch',
@@ -202,7 +186,6 @@ class BallSimulation:
         )
     
     def get_influence_boundaries(self, gravity_strength):
-        """Get influence boundaries for big balls."""
         return particle_utils.get_influence_boundaries(
             self.gpu_arrays,
             'torch',
@@ -210,7 +193,6 @@ class BallSimulation:
         )
     
     def get_particle_sample(self, max_samples=2000):
-        """Get particle data for rendering."""
         return particle_utils.get_particle_sample(
             self.gpu_arrays,
             'torch',
@@ -219,7 +201,6 @@ class BallSimulation:
 
 
 def main():
-    """Main entry point."""
     parser = argparse.ArgumentParser(
         description='GPU-accelerated particle physics simulation',
         formatter_class=argparse.RawDescriptionHelpFormatter

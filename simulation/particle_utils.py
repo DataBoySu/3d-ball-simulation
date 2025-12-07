@@ -4,21 +4,6 @@ import numpy as np
 
 
 def get_particle_sample(gpu_arrays, method, max_samples=2000):
-    """
-    Get a sampled subset of ACTIVE particle positions, masses, colors, and glow for visualization.
-    
-    Args:
-        gpu_arrays: Dictionary of GPU arrays (CuPy or PyTorch)
-        method: 'cupy' or 'torch'
-        max_samples: Maximum number of particles to return
-        
-    Returns:
-        tuple of (positions, masses, colors, glows) or (None, None, None, None) if not available
-        positions: numpy array of shape (N, 2) with [x, y]
-        masses: numpy array of shape (N,) with particle masses
-        colors: numpy array of shape (N, 3) with RGB colors (0-1 range)
-        glows: numpy array of shape (N,) with glow intensity (0-1)
-    """
     try:
         x = gpu_arrays.get('x')
         y = gpu_arrays.get('y')
@@ -32,8 +17,7 @@ def get_particle_sample(gpu_arrays, method, max_samples=2000):
             return None, None, None, None
         
         if method == 'cupy':
-            # Get only active particles
-            active_mask = active.get()  # Transfer to CPU
+            active_mask = active.get()
             x_all = x.get()
             y_all = y.get()
             mass_all = mass.get()
@@ -77,7 +61,6 @@ def get_particle_sample(gpu_arrays, method, max_samples=2000):
             glow_active = glow_active[::step]
             ball_color_active = ball_color_active[::step]
         
-        # Stack into Nx2 array
         positions = np.column_stack([x_active, y_active])
         return positions, mass_active, ball_color_active, glow_active
         
@@ -86,18 +69,6 @@ def get_particle_sample(gpu_arrays, method, max_samples=2000):
 
 
 def get_influence_boundaries(gpu_arrays, method, gravity_strength=500.0):
-    """
-    Get positions of large bodies with gravity radius based on actual force strength.
-    Radius shows where gravitational force drops to visible threshold.
-    
-    Args:
-        gpu_arrays: Dictionary of GPU arrays (CuPy or PyTorch)
-        method: 'cupy' or 'torch'
-        gravity_strength: Current gravity constant
-        
-    Returns:
-        list of (x, y, radius) tuples for large bodies, or empty list
-    """
     try:
         x = gpu_arrays.get('x')
         y = gpu_arrays.get('y')
@@ -120,15 +91,11 @@ def get_influence_boundaries(gpu_arrays, method, gravity_strength=500.0):
         else:
             return []
         
-        # Find large bodies (mass >= 1000)
         large_mask = (mass_all >= 1000.0) & active_mask
         
         boundaries = []
         for i in range(len(x_all)):
             if large_mask[i]:
-                # Calculate radius where gravitational force is perceptible
-                # F = G*M/r^2 -> r = sqrt(G*M/F_threshold)
-                # Reduced by factor of 5 for much smaller visual circles
                 grav_radius = max(50.0, np.sqrt(gravity_strength * mass_all[i] / 1.0) / 5.0)
                 boundaries.append((float(x_all[i]), float(y_all[i]), float(grav_radius)))
         
@@ -139,7 +106,6 @@ def get_influence_boundaries(gpu_arrays, method, gravity_strength=500.0):
 
 
 def spawn_big_balls(gpu_arrays, method, x, y, count, current_active_count):
-    """Spawn big ball(s) at specified position."""
     import random
     
     spawned = 0
@@ -173,7 +139,6 @@ def spawn_big_balls(gpu_arrays, method, x, y, count, current_active_count):
         import torch
         
         for i in range(count):
-            # Use LAST inactive index instead of first to avoid conflict with small ball drop logic
             inactive_indices = torch.where(~gpu_arrays['active'])[0]
             if len(inactive_indices) == 0:
                 break
@@ -186,7 +151,6 @@ def spawn_big_balls(gpu_arrays, method, x, y, count, current_active_count):
             color = torch.tensor([random.uniform(0.3, 1.0), random.uniform(0.3, 1.0), random.uniform(0.3, 1.0)], 
                                 device=gpu_arrays['x'].device, dtype=torch.float32)
             
-            # Set all properties
             gpu_arrays['x'][idx] = final_x
             gpu_arrays['y'][idx] = final_y
             gpu_arrays['vx'][idx] = 0.0

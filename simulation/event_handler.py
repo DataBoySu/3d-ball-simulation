@@ -2,16 +2,6 @@
 
 
 def handle_events(visualizer, pygame_events):
-    """
-    Process pygame events for visualizer.
-    
-    Args:
-        visualizer: ParticleVisualizer instance
-        pygame_events: List of pygame events
-        
-    Returns:
-        bool: True if should continue running, False to stop
-    """
     for event in pygame_events:
         if event.type == visualizer.pygame.QUIT:
             return False
@@ -24,7 +14,7 @@ def handle_events(visualizer, pygame_events):
                     continue
         
         elif event.type == visualizer.pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Left click
+            if event.button == 1:
                 _handle_mouse_click(visualizer, event.pos)
         
         elif event.type == visualizer.pygame.MOUSEBUTTONUP:
@@ -39,9 +29,7 @@ def handle_events(visualizer, pygame_events):
 
 
 def _handle_text_input(visualizer, event):
-    """Handle keyboard input for max balls cap text field."""
     if event.key == visualizer.pygame.K_RETURN:
-        # Validate: max_balls_cap must be >= initial_balls
         try:
             max_cap = int(visualizer.max_balls_cap['value']) if visualizer.max_balls_cap['value'] else 1
             initial = int(visualizer.sliders['initial_balls']['value']) if 'initial_balls' in visualizer.sliders else 1
@@ -56,7 +44,7 @@ def _handle_text_input(visualizer, event):
     
     elif event.unicode.isdigit():
         current = visualizer.max_balls_cap['value'] + event.unicode
-        if len(current) <= 6:  # Max 999999
+        if len(current) <= 6:
             visualizer.max_balls_cap['value'] = current
     
     return True
@@ -75,14 +63,12 @@ def _handle_mouse_click(visualizer, pos):
     
     visualizer.max_balls_cap['active'] = False
     
-    # Check multiplier button
     mx, my = visualizer.multiplier_button['pos']
     mw, mh = visualizer.multiplier_button['width'], visualizer.multiplier_button['height']
     if mx <= pos[0] <= mx + mw and my <= pos[1] <= my + mh:
         _handle_multiplier_cycle(visualizer)
         return
     
-    # Check split toggle button
     bx, by = visualizer.split_button['pos']
     bw, bh = visualizer.split_button['width'], visualizer.split_button['height']
     if bx <= pos[0] <= bx + bw and by <= pos[1] <= by + bh:
@@ -90,7 +76,6 @@ def _handle_mouse_click(visualizer, pos):
         visualizer.split_button['label'] = f"Ball Splitting: {'ON' if visualizer.split_enabled else 'OFF'}"
         return
     
-    # Check sliders
     for key, slider in visualizer.sliders.items():
         sx, sy = slider['pos']
         width = slider['width']
@@ -98,12 +83,10 @@ def _handle_mouse_click(visualizer, pos):
             visualizer._handle_slider_click(pos)
             return
     
-    # Spawn big ball(s) at click position
     _handle_particle_spawn(visualizer, pos)
 
 
 def _handle_multiplier_cycle(visualizer):
-    """Cycle through multiplier levels."""
     import math
     
     old_multiplier = visualizer.slider_multiplier
@@ -112,7 +95,6 @@ def _handle_multiplier_cycle(visualizer):
     visualizer.slider_multiplier = visualizer.multiplier_levels[next_idx]
     visualizer.multiplier_button['label'] = f'x{visualizer.slider_multiplier}'
     
-    # Rescale initial_balls slider proportionally
     if old_multiplier > 0:
         multiplier_ratio = visualizer.slider_multiplier / old_multiplier
         if 'initial_balls' in visualizer.sliders:
@@ -125,10 +107,8 @@ def _handle_multiplier_cycle(visualizer):
 
 
 def _handle_particle_spawn(visualizer, pos):
-    """Handle spawning particles at click position."""
     click_x, click_y = pos
     
-    # Convert screen coords to simulation coords (1000x800 space)
     scale_x = 1000.0 / visualizer.window_size[0]
     scale_y = 800.0 / visualizer.window_size[1]
     sim_x = click_x * scale_x
