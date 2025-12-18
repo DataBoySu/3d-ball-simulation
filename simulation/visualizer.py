@@ -10,7 +10,22 @@ from . import event_handler  # Import event handling
 
 class ParticleVisualizer:
     
-    def __init__(self, window_size: Tuple[int, int] = (1200, 800), max_render_particles: int = 2000):
+    def __init__(self, window_size: Tuple[int, int] = None, max_render_particles: int = None):
+        # Load defaults from shared config when not explicitly provided
+        if window_size is None:
+            try:
+                from . import config
+                window_size = config.WINDOW_SIZE
+            except Exception:
+                window_size = (1600, 1000)
+
+        if max_render_particles is None:
+            try:
+                from . import config
+                max_render_particles = config.MAX_RENDER_PARTICLES
+            except Exception:
+                max_render_particles = 2000
+
         self.window_size = window_size
         self.max_render_particles = max_render_particles
         self.running = False
@@ -21,24 +36,23 @@ class ParticleVisualizer:
         self.small_font = None
         self.colors = []
         self.particle_sizes = []
-        
         self.slider_multiplier = 1
         self.multiplier_levels = [1, 10, 100, 1000]
         self.multiplier_button = {
-            'pos': (920, 700),
+            'pos': (0, 0),
             'width': 80,
             'height': 30,
             'label': 'x1'
         }
         self.sliders = {
-            'gravity': {'value': 500.0, 'min': 0.0, 'max': 10000.0, 'pos': (50, 700), 'width': 220, 'label': 'Big Ball Gravity'},
-            'small_ball_speed': {'value': 300.0, 'min': 50.0, 'max': 600.0, 'pos': (300, 700), 'width': 220, 'label': 'Small Ball Speed'},
-            'initial_balls': {'value': 1.0, 'min': 1.0, 'max': 10.0, 'pos': (550, 700), 'width': 220, 'label': 'Initial Balls', 'is_int': True, 'base_max': 10.0}
+            'gravity': {'value': 500.0, 'min': 0.0, 'max': 10000.0, 'pos': (0, 0), 'width': 220, 'label': 'Big Ball Gravity'},
+            'small_ball_speed': {'value': 300.0, 'min': 50.0, 'max': 600.0, 'pos': (0, 0), 'width': 220, 'label': 'Small Ball Speed'},
+            'initial_balls': {'value': 1.0, 'min': 1.0, 'max': 10.0, 'pos': (0, 0), 'width': 220, 'label': 'Initial Balls', 'is_int': True, 'base_max': 10.0}
         }
         self.dragging_slider = None
         
         self.max_balls_cap = {
-            'pos': (800, 700),
+            'pos': (0, 0),
             'width': 100,
             'height': 30,
             'value': '100000',
@@ -48,16 +62,28 @@ class ParticleVisualizer:
         
         self.split_enabled = False
         self.split_button = {
-            'pos': (1020, 700),
+            'pos': (0, 0),
             'width': 160,
             'height': 30,
             'label': 'Ball Splitting: OFF'
         }
         
         self._init_pygame()
+        self._layout_controls()
     
     def _init_pygame(self):
         try:
+            # Insert our shim for `pygame.pkgdata` so pygame doesn't import
+            # the deprecated `pkg_resources` API and emit a deprecation warning.
+            import sys
+            try:
+                from .pygame_pkgdata_fix import pygame_pkgdata_module
+                sys.modules.setdefault('pygame.pkgdata', pygame_pkgdata_module)
+            except Exception:
+                # If the shim cannot be imported for any reason, continue; pygame
+                # will fall back to its bundled behavior (may emit a warning).
+                pass
+
             import pygame
             self.pygame = pygame
             pygame.init()
@@ -81,6 +107,44 @@ class ParticleVisualizer:
             self.running = False
             print("[WARNING] pygame not installed - visualization disabled")
             print("Install with: pip install pygame")
+
+
+    def _layout_controls(self):
+        """Compute positions for sliders and controls so they align neatly.
+
+        This uses the current `self.window_size` to distribute controls
+        horizontally with consistent spacing and vertical alignment.
+        """
+        margin = 40
+        spacing = 18
+        slider_width = 300
+        control_y = max(40, self.window_size[1] - 80)
+
+        x = margin
+        order = ['gravity', 'small_ball_speed', 'initial_balls']
+        for key in order:
+            s = self.sliders.get(key)
+            if s is None:
+                continue
+            s['pos'] = (x, control_y)
+            s['width'] = slider_width
+            x += slider_width + spacing
+
+        # Max cap input
+        self.max_balls_cap['pos'] = (x, control_y)
+        self.max_balls_cap['width'] = 120
+        x += self.max_balls_cap['width'] + spacing
+
+        # Multiplier
+        self.multiplier_button['pos'] = (x, control_y)
+        self.multiplier_button['width'] = 60
+        self.multiplier_button['height'] = 30
+        x += self.multiplier_button['width'] + spacing
+
+        # Split button
+        self.split_button['pos'] = (x, control_y)
+        self.split_button['width'] = 140
+        self.split_button['height'] = 30
     
     def is_available(self) -> bool:
         return self.running and self.pygame is not None
@@ -99,10 +163,6 @@ class ParticleVisualizer:
         elapsed_time: float = 0
     ):
         if not self.is_available():
-            return
-        
-        if not event_handler.handle_events(self, self.pygame.event.get()):
-            self.running = False
             return
         
         self.screen.fill((5, 5, 15))
@@ -174,12 +234,21 @@ class ParticleVisualizer:
             self.pygame.draw.circle(self.screen, (glow_r, glow_g, glow_b), (x, y), glow_radius)
             self.pygame.draw.circle(self.screen, base_color, (x, y), radius)
         
+        # Draw modern UI panels and controls
+        stats_data = {
+            'total_particles': total_particles,
+            'active_particles': active_particles,
+            'rendered_particles': num_particles,
+            'fps': fps,
+            'gpu_util': gpu_util,
+            'elapsed_time': elapsed_time,
+            'backend_multiplier': 1
+        }
+        ui_components.draw_stats(self.screen, self.font, self.window_size, stats_data)
+
         self._draw_sliders()
-        
         self._draw_text_input()
-        
         self._draw_multiplier_button()
-        
         self._draw_toggle_button()
         
         self.pygame.display.flip()
@@ -282,8 +351,24 @@ class ParticleVisualizer:
         return requests
     
     def close(self):
-        if self.pygame and self.running:
-            self.pygame.quit()
+        # Ensure pygame subsystems are quit regardless of current `running` state.
+        try:
+            if self.pygame:
+                try:
+                    # Try to quit the display first
+                    if hasattr(self.pygame, 'display'):
+                        try:
+                            self.pygame.display.quit()
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        self.pygame.quit()
+                    except Exception:
+                        pass
+        except Exception:
+            # Swallow any exceptions during shutdown to avoid hanging the process
+            pass
         self.running = False
 
 

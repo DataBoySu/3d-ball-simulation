@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'simulation'))
 
 from simulation import physics_torch, particle_utils, gpu_setup
-from simulation import visualizer, event_handler, metrics_sampler
+from simulation import visualizer, event_handler, metrics_sampler, config
 
 
 class BallSimulation:
@@ -60,135 +60,169 @@ class BallSimulation:
         
         self.running = True
         start_time = time.time()
-        
+
         if show_visualization:
-            viz = visualizer.ParticleVisualizer(window_size=(1000, 800))
+            # Use the pygame visualizer (keep renderer simple and stable)
+            viz = visualizer.ParticleVisualizer(window_size=config.WINDOW_SIZE)
+
             clock = pygame.time.Clock()
             frame_times = []
             max_frame_history = 10
             
-            while self.running:
-                frame_start = time.time()
-                
-                events = pygame.event.get()
-                event_handler.handle_events(viz, events)
-                
-                for event in events:
-                    if event.type == pygame.QUIT:
+            try:
+                while self.running:
+                    frame_start = time.time()
+
+                    events = pygame.event.get()
+                    # Use the return value from the event handler to decide
+                    # whether to continue running. This prevents double-consumption
+                    # of events and ensures a single close-click exits the app.
+                    if not event_handler.handle_events(viz, events):
                         self.running = False
-                
-                elapsed = time.time() - start_time
-                if duration and elapsed >= duration:
-                    self.running = False
-                    break
-                
-                slider_values = viz.get_slider_values()
-                self.gravity_strength = slider_values['gravity']
-                self.small_ball_speed = slider_values['small_ball_speed']
-                self.initial_balls = int(slider_values['initial_balls'])
-                
-                try:
-                    max_cap_text = viz.get_max_balls_cap()
-                    self.max_balls_cap = int(max_cap_text) if max_cap_text.isdigit() else 100000
-                except:
-                    self.max_balls_cap = 100000
-                
-                self.split_enabled = viz.get_split_enabled()
-                
-                spawn_requests = viz.get_spawn_requests()
-                for sim_x, sim_y, count in spawn_requests:
-                    self.spawn_big_balls(sim_x, sim_y, count)
-                
-                params = {
-                    'gravity_strength': self.gravity_strength,
-                    'small_ball_speed': self.small_ball_speed,
-                    'initial_balls': self.initial_balls,
-                    'max_balls_cap': self.max_balls_cap,
-                    'split_enabled': self.split_enabled,
-                    'active_count': self.counters['active_count'],
-                    'small_ball_count': self.counters['small_ball_count'],
-                    'drop_timer': self.drop_timer,
-                }
-                
-                result = physics_torch.run_particle_physics_torch(
-                    self.gpu_arrays, params, torch
-                )
-                
-                self.counters['active_count'] = result['active_count']
-                self.counters['small_ball_count'] = result['small_ball_count']
-                self.drop_timer = result['drop_timer']
-                self.split_enabled = result['split_enabled']
-                
-                torch.cuda.synchronize()
-                self.iterations += 1
-                
-                positions, masses, colors, glows = self.get_particle_sample(max_samples=2000)
-                
-                if positions is not None:
-                    frame_time = time.time() - frame_start
-                    frame_times.append(frame_time)
-                    if len(frame_times) > max_frame_history:
-                        frame_times.pop(0)
-                    avg_frame_time = sum(frame_times) / len(frame_times)
-                    render_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
-                    
-                    gpu_util = self.metrics_sampler.get_current_util()
-                    
-                    influence_boundaries = self.get_influence_boundaries(self.gravity_strength)
-                    
-                    viz.render_frame(
-                        positions=positions,
-                        masses=masses,
-                        colors=colors,
-                        glows=glows,
-                        influence_boundaries=influence_boundaries,
-                        total_particles=self.particle_count,
-                        active_particles=self.counters['active_count'],
-                        fps=render_fps,
-                        gpu_util=gpu_util,
-                        elapsed_time=elapsed
+                        break
+
+                    elapsed = time.time() - start_time
+                    if duration and elapsed >= duration:
+                        self.running = False
+                        break
+
+                    slider_values = viz.get_slider_values()
+                    self.gravity_strength = slider_values['gravity']
+                    self.small_ball_speed = slider_values['small_ball_speed']
+                    self.initial_balls = int(slider_values['initial_balls'])
+
+                    try:
+                        max_cap_text = viz.get_max_balls_cap()
+                        self.max_balls_cap = int(max_cap_text) if max_cap_text.isdigit() else 100000
+                    except:
+                        self.max_balls_cap = 100000
+
+                    self.split_enabled = viz.get_split_enabled()
+
+                    spawn_requests = viz.get_spawn_requests()
+                    for sim_x, sim_y, count in spawn_requests:
+                        self.spawn_big_balls(sim_x, sim_y, count)
+
+                    params = {
+                        'gravity_strength': self.gravity_strength,
+                        'small_ball_speed': self.small_ball_speed,
+                        'initial_balls': self.initial_balls,
+                        'max_balls_cap': self.max_balls_cap,
+                        'split_enabled': self.split_enabled,
+                        'active_count': self.counters['active_count'],
+                        'small_ball_count': self.counters['small_ball_count'],
+                        'drop_timer': self.drop_timer,
+                    }
+
+                    result = physics_torch.run_particle_physics_torch(
+                        self.gpu_arrays, params, torch
                     )
-                
-                clock.tick()
-            
-            viz.close()
+
+                    self.counters['active_count'] = result['active_count']
+                    self.counters['small_ball_count'] = result['small_ball_count']
+                    self.drop_timer = result['drop_timer']
+                    self.split_enabled = result['split_enabled']
+
+                    torch.cuda.synchronize()
+                    self.iterations += 1
+
+                    positions, masses, colors, glows = self.get_particle_sample(max_samples=2000)
+
+                    if positions is not None:
+                        frame_time = time.time() - frame_start
+                        frame_times.append(frame_time)
+                        if len(frame_times) > max_frame_history:
+                            frame_times.pop(0)
+                        avg_frame_time = sum(frame_times) / len(frame_times)
+                        render_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
+
+                        gpu_util = self.metrics_sampler.get_current_util()
+
+                        influence_boundaries = self.get_influence_boundaries(self.gravity_strength)
+
+                        viz.render_frame(
+                            positions=positions,
+                            masses=masses,
+                            colors=colors,
+                            glows=glows,
+                            influence_boundaries=influence_boundaries,
+                            total_particles=self.particle_count,
+                            active_particles=self.counters['active_count'],
+                            fps=render_fps,
+                            gpu_util=gpu_util,
+                            elapsed_time=elapsed
+                        )
+
+                    clock.tick()
+            except KeyboardInterrupt:
+                # User pressed Ctrl+C — stop cleanly
+                self.running = False
+                print("\nInterrupted by user (KeyboardInterrupt)")
+            except Exception as e:
+                # Ensure visualizer and metrics are cleaned up on unexpected errors
+                try:
+                    viz.close()
+                except Exception:
+                    pass
+                try:
+                    self.metrics_sampler.stop()
+                except Exception:
+                    pass
+                print(f"\nError during visualization loop: {e}")
+                sys.exit(1)
+            finally:
+                try:
+                    viz.close()
+                except Exception:
+                    pass
         else:
             import torch
-            
-            while self.running:
-                elapsed = time.time() - start_time
-                if duration and elapsed >= duration:
-                    break
-                
-                params = {
-                    'gravity_strength': self.gravity_strength,
-                    'small_ball_speed': self.small_ball_speed,
-                    'initial_balls': self.initial_balls,
-                    'max_balls_cap': self.max_balls_cap,
-                    'split_enabled': self.split_enabled,
-                    'active_count': self.counters['active_count'],
-                    'small_ball_count': self.counters['small_ball_count'],
-                    'drop_timer': self.drop_timer,
-                }
-                
-                result = physics_torch.run_particle_physics_torch(
-                    self.gpu_arrays, params, torch
-                )
-                
-                self.counters['active_count'] = result['active_count']
-                self.counters['small_ball_count'] = result['small_ball_count']
-                self.drop_timer = result['drop_timer']
-                
-                torch.cuda.synchronize()
-                self.iterations += 1
-                
-                if self.iterations % 50 == 0:
-                    gpu_util = self.metrics_sampler.get_current_util()
-                    iter_per_sec = self.iterations / elapsed
-                    active = self.counters['active_count']
-                    small = self.counters['small_ball_count']
-                    big = active - small
-                    print(f"\rIter: {self.iterations:>6,} | {iter_per_sec:>6.1f} it/s | GPU: {gpu_util:>3.0f}% | Active: {active:>6,} | Small: {small:>6,} | Big: {big:>3}  ", end='', flush=True)
+
+            try:
+                while self.running:
+                    elapsed = time.time() - start_time
+                    if duration and elapsed >= duration:
+                        break
+
+                    params = {
+                        'gravity_strength': self.gravity_strength,
+                        'small_ball_speed': self.small_ball_speed,
+                        'initial_balls': self.initial_balls,
+                        'max_balls_cap': self.max_balls_cap,
+                        'split_enabled': self.split_enabled,
+                        'active_count': self.counters['active_count'],
+                        'small_ball_count': self.counters['small_ball_count'],
+                        'drop_timer': self.drop_timer,
+                    }
+
+                    result = physics_torch.run_particle_physics_torch(
+                        self.gpu_arrays, params, torch
+                    )
+
+                    self.counters['active_count'] = result['active_count']
+                    self.counters['small_ball_count'] = result['small_ball_count']
+                    self.drop_timer = result['drop_timer']
+
+                    torch.cuda.synchronize()
+                    self.iterations += 1
+
+                    if self.iterations % 50 == 0:
+                        gpu_util = self.metrics_sampler.get_current_util()
+                        iter_per_sec = self.iterations / elapsed
+                        active = self.counters['active_count']
+                        small = self.counters['small_ball_count']
+                        big = active - small
+                        print(f"\rIter: {self.iterations:>6,} | {iter_per_sec:>6.1f} it/s | GPU: {gpu_util:>3.0f}% | Active: {active:>6,} | Small: {small:>6,} | Big: {big:>3}  ", end='', flush=True)
+            except KeyboardInterrupt:
+                self.running = False
+                print("\nInterrupted by user (KeyboardInterrupt)")
+            except Exception as e:
+                try:
+                    self.metrics_sampler.stop()
+                except Exception:
+                    pass
+                print(f"\nError during headless loop: {e}")
+                sys.exit(1)
         
         elapsed = time.time() - start_time
         self.metrics_sampler.stop()
