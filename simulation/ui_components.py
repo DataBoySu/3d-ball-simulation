@@ -8,6 +8,29 @@ and updated buttons while keeping the same function signatures used by
 import math
 
 
+def _hsv_to_rgb(h, s, v):
+    # h in [0,1], s in [0,1], v in [0,1]
+    i = int(h * 6.0)
+    f = (h * 6.0) - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - f * s)
+    t = v * (1.0 - (1.0 - f) * s)
+    i = i % 6
+    if i == 0:
+        r, g, b = v, t, p
+    elif i == 1:
+        r, g, b = q, v, p
+    elif i == 2:
+        r, g, b = p, v, t
+    elif i == 3:
+        r, g, b = p, q, v
+    elif i == 4:
+        r, g, b = t, p, v
+    else:
+        r, g, b = v, p, q
+    return int(r * 255), int(g * 255), int(b * 255)
+
+
 def _rounded_rect(surface, rect, color, radius=8):
     try:
         import pygame
@@ -17,6 +40,7 @@ def _rounded_rect(surface, rect, color, radius=8):
 
 
 def draw_stats(screen, font, window_size, stats_data):
+    # Static, high-contrast stats panel for clarity (no animation)
     padding = 12
     w = 300
     h = 160
@@ -24,10 +48,10 @@ def draw_stats(screen, font, window_size, stats_data):
     y = padding
 
     panel = screen.subsurface((x, y, w, h)).copy()
-    panel.fill((20, 24, 28, 180))
+    panel.fill((22, 24, 28, 220))
     screen.blit(panel, (x, y))
 
-    title = font.render("Simulation Stats", True, (230, 230, 230))
+    title = font.render("Simulation Stats", True, (245, 245, 245))
     screen.blit(title, (x + 14, y + 10))
 
     backend_mult = stats_data.get('backend_multiplier', 1)
@@ -49,6 +73,7 @@ def draw_stats(screen, font, window_size, stats_data):
         oy += 22
 
 
+
 def draw_sliders(pygame, screen, small_font, sliders, dragging_slider):
     for key, slider in sliders.items():
         x, y = slider['pos']
@@ -62,7 +87,7 @@ def draw_sliders(pygame, screen, small_font, sliders, dragging_slider):
 
         # Track
         track_rect = (x, y, width, height)
-        _rounded_rect(screen, track_rect, (42, 46, 52), radius=10)
+        _rounded_rect(screen, track_rect, (36, 38, 44), radius=10)
 
         # Draw tick marks (5 divisions)
         ticks = 5
@@ -88,13 +113,14 @@ def draw_sliders(pygame, screen, small_font, sliders, dragging_slider):
 
         filled_w = int(width * normalized)
         if filled_w > 0:
+            # Static fill color for clarity
             _rounded_rect(screen, (x, y, filled_w, height), (60, 140, 220), radius=10)
 
-        # Handle with subtle shadow
+        # Handle with subtle shadow and static rim
         handle_x = x + filled_w
         handle_radius = 11
-        pygame.draw.circle(screen, (20, 24, 28), (handle_x, y + height // 2), handle_radius + 4)
-        pygame.draw.circle(screen, (235, 235, 235), (handle_x, y + height // 2), handle_radius)
+        pygame.draw.circle(screen, (16, 18, 20), (handle_x, y + height // 2), handle_radius + 4)
+        pygame.draw.circle(screen, (245, 245, 245), (handle_x, y + height // 2), handle_radius)
 
         # Value box
         val = slider['value']
@@ -106,6 +132,7 @@ def draw_sliders(pygame, screen, small_font, sliders, dragging_slider):
         vb_w, vb_h = 64, 20
         vb_x = x + width + 12
         vb_y = y - 1
+        # Static value box
         _rounded_rect(screen, (vb_x, vb_y, vb_w, vb_h), (28, 32, 36), radius=6)
         vb_text = small_font.render(val_str, True, (220, 220, 220))
         screen.blit(vb_text, (vb_x + 8, vb_y + 2))
@@ -132,7 +159,7 @@ def draw_multiplier_button(pygame, screen, font, button_data):
     width, height = button_data['width'], button_data['height']
     label = button_data.get('label', '')
 
-    _rounded_rect(screen, (x, y, width, height), (34, 40, 48), radius=8)
+    _rounded_rect(screen, (x, y, width, height), (30, 36, 44), radius=8)
     pygame.draw.rect(screen, (70, 100, 160), (x, y, width, height), 2, border_radius=8)
 
     txt = font.render(label, True, (220, 220, 220))

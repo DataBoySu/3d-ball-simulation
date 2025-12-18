@@ -12,6 +12,29 @@ from simulation import physics_torch, particle_utils, gpu_setup
 from simulation import visualizer, event_handler, metrics_sampler, config
 
 
+def _hsv_to_rgb(h, s, v):
+    # h in [0,1], s in [0,1], v in [0,1]
+    i = int(h * 6.0)
+    f = (h * 6.0) - i
+    p = v * (1.0 - s)
+    q = v * (1.0 - f * s)
+    t = v * (1.0 - (1.0 - f) * s)
+    i = i % 6
+    if i == 0:
+        r, g, b = v, t, p
+    elif i == 1:
+        r, g, b = q, v, p
+    elif i == 2:
+        r, g, b = p, v, t
+    elif i == 3:
+        r, g, b = p, q, v
+    elif i == 4:
+        r, g, b = t, p, v
+    else:
+        r, g, b = v, p, q
+    return int(r * 255), int(g * 255), int(b * 255)
+
+
 class BallSimulation:
     """Main simulation controller."""
     
@@ -152,6 +175,36 @@ class BallSimulation:
                             gpu_util=gpu_util,
                             elapsed_time=elapsed
                         )
+
+                        # Print colorful terminal stats periodically to aid monitoring
+                        try:
+                            if self.iterations % 10 == 0:
+                                iter_per_sec = (self.iterations / elapsed) if elapsed > 0 else 0
+                                active = self.counters.get('active_count', 0)
+                                small = self.counters.get('small_ball_count', 0)
+                                big = max(0, active - small)
+
+                                # Animated hue based on time for color cycling
+                                hue = (time.time() * 0.18) % 1.0
+                                r, g, b = _hsv_to_rgb(hue, 0.72, 0.95)
+                                # ANSI 24-bit color sequence
+                                color_seq = f"\x1b[38;2;{r};{g};{b}m"
+                                reset_seq = "\x1b[0m"
+
+                                spinner_frames = ['◐', '◓', '◑', '◒']
+                                spinner = spinner_frames[self.iterations % len(spinner_frames)]
+
+                                line = (
+                                    f"Iter: {self.iterations:>6,} | {render_fps:>5.1f} FPS | "
+                                    f"GPU: {gpu_util:>3.0f}% | Active: {active:>6,} | Small: {small:>6,} | Big: {big:>6,} "
+                                    f"{spinner}"
+                                )
+
+                                # Overwrite the same terminal line with color
+                                print(f"\r{color_seq}{line}{reset_seq}", end='', flush=True)
+                        except Exception:
+                            # Printing must not interrupt the simulation
+                            pass
 
                     clock.tick()
             except KeyboardInterrupt:
