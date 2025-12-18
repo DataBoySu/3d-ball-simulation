@@ -21,28 +21,105 @@ This is my personal playground where I implement various bonker things to get be
 
 ## Physics & Math
 
-This project uses a mix of simple and pragmatic physics models to balance performance and visual richness:
+This project uses a set of pragmatic, GPU-friendly approximations to produce visually interesting behavior while remaining performant at large particle counts. Below are the main formulas and the implementation notes showing how they map to the code.
 
-- **Gravity / attraction:** pairwise influence approximating inverse-square behavior
-  - Force from mass j on i:  `F_ij = G * m_j / (r_ij^2 + ε)`
-  - Implementation notes: forces are accumulated using vectorized GPU ops (PyTorch tensors on CUDA). A softening term `ε` avoids singularities at short range.
+### 1) Gravity / Pairwise Attraction
 
-- **Collision response (impulses):**
-  - Compute normal `n = (x_j - x_i) / |x_j - x_i|`
-  - Relative velocity along `n` determines impulse magnitude; big masses use a near-elastic restitution.
+We use a softened inverse-square style influence computed pairwise and accumulated using vectorized GPU ops.
 
-- **Time integration:** semi-implicit Euler (velocity updated by acceleration, positions incremented by velocity)
+Vector form (conceptual):
 
-- **Gameplay mechanics:** big balls have health, same-color small balls heal & get absorbed; non-own-color hits damage and can trigger explosions into small balls.
+$$\mathbf{F}_{ij} = G\; m_j \; \frac{\mathbf{r}_j - \mathbf{r}_i}{\|\mathbf{r}_j - \mathbf{r}_i\|^3 + \varepsilon}$$
+
+Practical scalar form used in code (softening in denominator):
+
+$$F_{ij} = G\;\frac{m_j}{\|\mathbf{r}_j - \mathbf{r}_i\|^2 + \varepsilon}$$
+
+Notes:
+
+- A small softening term $\varepsilon$ prevents singularities at short ranges.
+- Forces are accumulated per-particle using GPU tensors (see `simulation/physics_torch.py`).
+
+---
+
+### 2) Collision response (impulse-based)
+
+Collisions are resolved pairwise using the collision normal and the relative velocity along that normal.
+
+Unit normal:
+
+$$\mathbf{n} = \frac{\mathbf{r}_j - \mathbf{r}_i}{\|\mathbf{r}_j - \mathbf{r}_i\|}$$
+
+Relative velocity:
+
+$$v_{rel} = (\mathbf{v}_j - \mathbf{v}_i) \cdot \mathbf{n}$$
+
+Classical instantaneous impulse magnitude (elastic model):
+
+$$J = -\frac{(1+e)\,v_{rel}}{\dfrac{1}{m_i} + \dfrac{1}{m_j}}$$
+
+Velocity updates (impulse application):
+
+$$\Delta\mathbf{v}_i = \frac{J}{m_i}\mathbf{n},\quad \Delta\mathbf{v}_j = -\frac{J}{m_j}\mathbf{n}$$
+
+Implementation notes:
+
+- The code uses a mass-weighted impulse factor and an adjustable restitution (near-elastic for large masses) to produce lively collisions while remaining stable on the GPU.
+- After impulses, overlapping pairs are separated to prevent sticking:
+
+$$\text{separation} = \alpha\times\text{overlap},\quad \alpha\approx 0.6$$
+
+---
+
+### 3) Time integration
+
+We use semi-implicit (symplectic) Euler integration:
+
+1. $\mathbf{v} \leftarrow \mathbf{v} + \mathbf{a}\,\Delta t$
+2. $\mathbf{x} \leftarrow \mathbf{x} + \mathbf{v}\,\Delta t$
+
+With additional safeguards:
+
+- Small-ball speeds are clamped to a configured maximum to keep visuals coherent.
+- Bounce responses apply velocity sign flips with damping at boundaries.
+
+---
+
+### 4) Numerical stability and performance
+
+- Add small epsilons to denominators (e.g., $\|\mathbf{r}\|^2 + \varepsilon$) to avoid divisions by zero.
+- Use vectorized tensor operations and accumulation (e.g., `scatter_add`/index-add patterns) to handle multiple collisions affecting the same particle in one timestep.
+- Defer mutations to the global active mask until after per-frame accumulation so array shapes remain consistent during GPU writes.
+
+---
+
+### 5) Game mechanics & spawning rules
+
+- Big balls carry a scalar `health` and a `consec_non_own` counter.
+- Same-color small-ball collisions:
+  - Heal the big ball by +1
+  - Absorb and deactivate the small ball
+- Non-own-color collisions:
+  - Decrease big ball health by 1
+  - Increment `consec_non_own`
+  - If `consec_non_own >= 50` the big ball "explodes" into several small balls (spawned from the inactive pool)
+
+Implementation mapping:
+
+- Health, consec counters and spawn logic are implemented in `simulation/physics_torch.py` (collision loop and post-collision spawn), and helper spawn routines in `simulation/particle_utils.py`.
+
+---
+
+For a concise code-to-formula guide, see the comments near the collision and attraction loops in `simulation/physics_torch.py`. If you want, I can add a short inline table mapping each equation above to the exact line ranges in that file. Would you like that?
 
 ---
 
 ## Where things are used
 
-- **PyTorch (CUDA)** — physics & vector math on the GPU (`simulation/physics_torch.py`, `simulation/gpu_setup.py`).
-- **Pygame** — visualization, UI, event handling (`simulation/visualizer.py`, `simulation/ui_components.py`).
-- **CuPy** (optional) — alternate GPU compute backend.
-- **numpy** — utility conversions and CPU fallbacks.
+- **PyTorch (CUDA)** : physics & vector math on the GPU (`simulation/physics_torch.py`, `simulation/gpu_setup.py`).
+- **Pygame** : visualization, UI, event handling (`simulation/visualizer.py`, `simulation/ui_components.py`).
+- **CuPy** (optional) : alternate GPU compute backend.
+- **numpy** : utility conversions and CPU fallbacks.
 
 ---
 
